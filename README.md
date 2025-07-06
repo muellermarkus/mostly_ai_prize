@@ -14,9 +14,11 @@ The main ideas are summarized below:
 ## Replication
 
 Make sure `uv` is installed. Then simply use `uv sync` to replicate the environment.
-Next, run `main.py` using `python main.py`.
-Data reports and synthetic data samples are saved in `results/`.
+Next, run `main.py` using `python main.py`. Note that for the official evaluation, the script should be run on a `g5.2xlarge` (GPU) instance.
+Data reports are saved in `results/` and the synthetic data is saved as `results/submission.csv`.
 Training and validation losses can be accessed using tensorboard and are saved in `results/tb`.
+
+The model can be trained on a different dataset by adjusting the `file_path` in `main.py` accordingly.
 
 
 ## Relevant papers
