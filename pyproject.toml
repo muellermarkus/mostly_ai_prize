@@ -1,0 +1,15 @@
+[project]
+name = "mostly-ai-prize"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "dython>=0.7.9",
+    "einops>=0.8.1",
+    "ipykernel>=6.29.5",
+    "mostlyai-qa>=1.9.8",
+    "polars>=1.31.0",
+    "tensorboard>=2.19.0",
+    "torch-ema>=0.3",
+]
