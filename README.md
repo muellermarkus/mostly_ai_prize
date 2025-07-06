@@ -1,4 +1,4 @@
-# Solution for the MOSTLY AI Prize (flat table generation)
+# Solution for the MOSTLY AI Prize (flat table)
 
 ## Overview
 
