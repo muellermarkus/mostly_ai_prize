@@ -22,7 +22,7 @@ set_seeds(42, cuda_deterministic=True)
 
 # Path to the training data file
 file_path = 'data/flat-training.csv.gz'  
-dp = DataPreprocessor(file_path, num_quantiles=100, train_batch_size=4096, val_batch_size=4096, cont_encoder=1, train_prop=0.9, condition_on_binary=False, cat_min_frequency=10)
+dp = DataPreprocessor(file_path, num_quantiles=100, train_batch_size=4096, val_batch_size=4096, train_prop=0.9, condition_on_binary=False, cat_min_frequency=10)
 train_loader, val_loader = dp.preprocess()
 
 
@@ -77,14 +77,10 @@ for v in cleaned_select_idx:
     aux_idx.append(v)
     aux_labels = [col_names[i] for i in aux_idx]
     count_data, _ = count_to_get_probs(df_prob, aux_labels)
-    if count_data.height > 50000: #FIXME: make this relative to total number of samples! 
+    if count_data.height > 50000: 
         aux_idx = aux_idx[:-1]  # remove last feature
         break
 cleaned_select_idx = aux_idx
-
-# TODO: add all bivariate features, they have close to 100% accuracy anyways
-# bin_cols = [lab for i, lab in enumerate(dp.cat_cols) if torch.tensor(dp.X_cat_n_classes)[i] == 2]
-# cleaned_select_idx += [i for i, col in enumerate(col_names) if col in bin_cols]
 
 # update selected labels
 select_labels = [col_names[i] for i in cleaned_select_idx]

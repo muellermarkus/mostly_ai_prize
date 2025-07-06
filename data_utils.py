@@ -66,9 +66,7 @@ def determine_column_types(data, MAX_UNIQUE_VALS=100):
 
 class ContEncoder:
     """
-    Encoder for continuous features, which encodes them into categories corresponding to quantiles, min/max values, inflated values, and missings. These categories are then endoded using an ordinal encoder and are the inputs to the low-resolution model.
-    Also outputs mask which is = 1 for values that need to be inferred by a high-resolution model. Mask = 0 indicates inflated values, and missings that are determined by the low-resolution model.
-    # TODO: treat min/max values different from quantiles such that mask = 0 becomes possible? or alternative just generate mask based on matching min/max values
+    Encoder for continuous features, which encodes them into categories corresponding to quantiles, min/max values, inflated values, and missings.
     """
     
     def __init__(self, train_set, num_quantiles=10, encode_min_max=False):
@@ -249,7 +247,6 @@ class ContEncoder:
 
         # decode missing category, mask = True if to be inferred by high resolution model
         if self.has_missing[i]:
-            # TODO: also map unknown values to NAN from encoder? probably not needed, since we never decode OOD data
             out[x_dec[:,i] == 'MISSING'] = np.nan
             mask[x_dec[:,i] == 'MISSING'] = False
             
@@ -294,291 +291,11 @@ class ContEncoder:
         return x_num_gen
     
     
-    
-    
-    
-
-
-
-class ContEncoder2:
-    """
-    Alternative.
-    """
-    
-    def __init__(self, train_set, num_quantiles=10, encode_min_max=True):
-
-        self.n_features = train_set.shape[1]
-        self.encode_min_max = encode_min_max
-        
-        # encode min/max values as separate categories
-        self.idx_to_min_max = self.determine_min_max(train_set)
-        
-        # determine inflated values to encode separately
-        self.idx_to_inflated = self.determine_inflated(train_set)
-        
-        # check if columns have missings to encode separately
-        self.has_missing = self.determine_missing(train_set)
-        
-        # determine bins for remaining values
-        # self.idx_to_quantiles = self.determine_quantiles(train_set, num_quantiles=num_quantiles)
-        
-        self.bin_encs = [KBinsDiscretizer(n_bins=num_quantiles, encode='ordinal', strategy='quantile') for _ in range(self.n_features)]
-    
-        for i, bin_enc in enumerate(self.bin_encs):
-            d = np.clip(train_set[:, i].drop_nulls().to_numpy(), self.idx_to_min_max[i]['min'], self.idx_to_min_max[i]['max'])
-            
-            # remove inflated values
-            if self.idx_to_inflated[i] is not None:
-                for val in self.idx_to_inflated[i]:
-                    d = d[d != val]
-            
-            # remove min/max values
-            d = d[d != self.idx_to_min_max[i]['min']] if self.idx_to_min_max[i]['encode_min'] else d
-            d = d[d != self.idx_to_min_max[i]['max']] if self.idx_to_min_max[i]['encode_max'] else d
-            
-            bin_enc.fit(d.reshape(-1, 1)) 
-            
-            
-        # fit ordinal encoder on training set
-        self.ord_enc = OrdinalEncoder()
-        self.ord_enc.fit(self.partial_encode(train_set))
-        
-        
-    def determine_min_max(self, x: pl.DataFrame, min_max_threshold=20):
-        
-        idx_to_min_max = {}
-        min_vals = x.min()
-        max_vals = x.max()
-        
-        for i in range(x.shape[1]):
-            idx_dict = {}
-            n_min_val = x[:,i].filter(x[:,i] == min_vals[:,i]).shape[0]
-            n_max_val = x[:,i].filter(x[:,i] == max_vals[:,i]).shape[0]
-            idx_dict['min'] = min_vals[:,i].item()
-            idx_dict['max'] = max_vals[:,i].item()
-            idx_dict['encode_min'] = n_min_val > min_max_threshold
-            idx_dict['encode_max'] = n_max_val > min_max_threshold
-            idx_to_min_max[i] = idx_dict
-            
-        return idx_to_min_max
-    
-        
-    def determine_inflated(self, x: pl.DataFrame, INFLATED_THRESHOLD=0.05):
-        # maps feature index to inflated value
-        # as long as threshold > 0.5, we have a single inflated value
-        idx_to_inflated = {}
-        for i in range(self.n_features):
-            d = x[:,i].drop_nulls()
-            
-            if self.encode_min_max:
-                d = d.filter(d != self.idx_to_min_max[i]['min']) if self.idx_to_min_max[i]['encode_min'] else d
-                d = d.filter(d != self.idx_to_min_max[i]['max']) if self.idx_to_min_max[i]['encode_max'] else d
-
-            vals, counts = np.unique(d, return_counts=True)
-            props = counts / sum(counts) # normalize by remaining values (non-missing, non-min, non-max)
-            inflated_vals = vals[props >= INFLATED_THRESHOLD]
-            
-            # define also as inflated value if highest proportion is at least twice the second highest proportion
-            highest_two = np.sort(props)[-2:]
-            if highest_two[1] > 2 * highest_two[0]:
-                inflated_vals = np.concat((inflated_vals, vals[props == highest_two[1]]))
-            if (len(inflated_vals) > 0):
-                idx_to_inflated[i] = np.unique(inflated_vals)
-            else:
-                idx_to_inflated[i] = None
-        return idx_to_inflated
-    
-
-    def determine_missing(self, x):
-        has_missing = {i: (x.null_count()[col] > 0).item() for i, col in enumerate(x.columns)}
-        return has_missing
-        
-        
-    def determine_quantiles(self, x, num_quantiles=10):
-        idx_to_quantiles = {}
-        for i in range(x.shape[1]):
-            d = x[:,i].drop_nulls()
-                        
-            # filter out min/max values if needed
-            if self.encode_min_max:
-                d = d.filter(d != self.idx_to_min_max[i]['min']) if self.idx_to_min_max[i]['encode_min'] else d
-                d = d.filter(d != self.idx_to_min_max[i]['max']) if self.idx_to_min_max[i]['encode_max'] else d
-
-            # filter out inflated values
-            if self.idx_to_inflated[i] is not None:
-                for inflated_val in self.idx_to_inflated[i]:
-                    d = d.filter(d != inflated_val)
-
-            qs = np.linspace(0, 1, num_quantiles+1)
-                
-            # determine quantiles for later grouping
-            qs = np.nanquantile(d, q=qs, method='closest_observation')
-            
-            # keep only unique quantiles
-            qs = np.unique(qs)
-            
-            # add min bin and min bin
-            if self.encode_min_max:
-                qs = np.insert(qs, 0, self.idx_to_min_max[i]['min']) if self.idx_to_min_max[i]['encode_min'] else qs
-                qs = np.append(qs, self.idx_to_min_max[i]['max']) if self.idx_to_min_max[i]['encode_max'] else qs
-
-            # add -Inf and Inf to the quantiles
-            qs = qs.astype(np.float32)
-            qs = np.insert(qs, 0, -np.inf)
-            qs = np.append(qs, np.inf)
-
-            idx_to_quantiles[i] = qs
-            
-        return idx_to_quantiles
-    
-    def partial_encode(self, x):
-        return np.column_stack([self.encode_(x, i)[0] for i in range(x.shape[1])])
-        
-    def encode(self, x):
-        x_enc = []
-        masks = []
-        for i in range(x.shape[1]):
-            x_enc_i, mask_i = self.encode_(x, i)
-            x_enc.append(x_enc_i)
-            masks.append(mask_i)
-        x_enc = self.ord_enc.transform(np.column_stack(x_enc)).astype(np.int32)
-        masks = np.column_stack(masks)
-        return x_enc, masks
-    
-    def decode(self, x_enc):
-        x_dec_aux = self.ord_enc.inverse_transform(x_enc)
-        x_dec = []
-        masks = []
-        for i in range(x_enc.shape[1]):
-            x_dec_i, mask_i = self.decode_(x_dec_aux, i)
-            x_dec.append(x_dec_i)
-            masks.append(mask_i)
-        x_dec = np.column_stack(x_dec)
-        masks = np.column_stack(masks)
-        return x_dec, masks
-    
-    def get_miss_mask(self, x_enc):
-        x_dec_aux = self.ord_enc.inverse_transform(x_enc)
-        return (x_dec_aux == 'MISSING')
-
-    def encode_(self, x, i):
-        
-        # order of encoding:
-        # QUANTILES
-        # MISSING = missing (if exists)
-        # INFLATED = inflated val (if exists)
-        
-        d = x[:,i].to_numpy()
-        
-        # create mask, which values to infer using high resolution model
-        mask = np.ones_like(d, dtype=bool)
-        
-        if np.isnan(d).any():
-            assert self.has_missing[i], f"Column {i} has NaNs but is not marked as having missing values!"
-        
-        # clamp to min, max values seen in training set
-        d = np.clip(d, self.idx_to_min_max[i]['min'], self.idx_to_min_max[i]['max'])
-        
-        # right_quantiles = self.idx_to_quantiles[i][1:]
-        # x_enc = np.digitize(d, right_quantiles, right=True).astype(str)
-        x_enc = self.bin_encs[i].transform(np.nan_to_num(d, copy=True).reshape(-1, 1)).flatten().astype(int).astype(str)
-
-        if self.has_missing[i]:
-            x_enc[np.isnan(d)] = 'MISSING'
-            mask[np.isnan(d)] = False
-        
-        if self.idx_to_inflated[i] is not None:
-            for inflated_val in self.idx_to_inflated[i]:
-                x_enc[d == inflated_val] = 'INFLATED_' + str(inflated_val)
-                mask[d == inflated_val] = False
-                
-        if self.idx_to_min_max[i]['encode_min']:
-            x_enc[d == self.idx_to_min_max[i]['min']] = 'MIN'
-            mask[d == self.idx_to_min_max[i]['min']] = False
-            
-        if self.idx_to_min_max[i]['encode_max']:
-            x_enc[d == self.idx_to_min_max[i]['max']] = 'MAX'
-            mask[d == self.idx_to_min_max[i]['max']] = False
-
-        return x_enc, mask
-    
-
-    def decode_(self, x_dec, i, return_quantiles=False):
-        
-        out = np.zeros_like(x_dec[:,i], dtype=np.float32)
-        mask = np.ones_like(x_dec[:,i], dtype=bool)
-
-        # decode missing category, mask = True if to be inferred by high resolution model
-        if self.has_missing[i]:
-            # TODO: also map unknown values to NAN from encoder? probably not needed, since we never decode OOD data
-            out[x_dec[:,i] == 'MISSING'] = np.nan
-            mask[x_dec[:,i] == 'MISSING'] = False
-            
-        # decode inflated category
-        if self.idx_to_inflated[i] is not None:
-            for inflated_val in self.idx_to_inflated[i]:
-                out[x_dec[:,i] == 'INFLATED_' + str(inflated_val)] = inflated_val
-                mask[x_dec[:,i] == 'INFLATED_' + str(inflated_val)] = False
-                
-                
-        # decode min/max 
-        if self.idx_to_min_max[i]['encode_min']:
-            out[x_dec[:,i] == 'MIN'] = self.idx_to_min_max[i]['min']
-            mask[x_dec[:,i] == 'MIN'] = False
-            
-        if self.idx_to_min_max[i]['encode_max']:
-            out[x_dec[:,i] == 'MAX'] = self.idx_to_min_max[i]['max']
-            mask[x_dec[:,i] == 'MAX'] = False
-        
-            
-        # if return_quantiles:
-        #     # decode quantiles (remaining categories)
-        #     aux = np.ones_like(x_dec[:,i], dtype=np.int64)
-        #     aux[mask] = x_dec[:,i][mask].astype(int)
-            
-        #     lower_bounds = self.idx_to_quantiles[i][:-1][aux * mask]
-        #     upper_bounds = self.idx_to_quantiles[i][1:][aux * mask]
-            
-        #     # deal with min, max values
-        #     lower_bounds[lower_bounds == -np.inf] = min(self.idx_to_quantiles[i][self.idx_to_quantiles[i] != -np.inf])
-        #     upper_bounds[upper_bounds == np.inf] = max(self.idx_to_quantiles[i][self.idx_to_quantiles[i] != np.inf])
-            
-            # return out, mask, lower_bounds, upper_bounds
-            
-        x_dec[:,i][x_dec[:,i] == 'MISSING'] = 0
-        x_dec[:,i][np.strings.startswith(x_dec[:,i], 'INFLATED_')] = 0
-        x_dec[:,i][x_dec[:,i] == 'MIN'] = 0
-        x_dec[:,i][x_dec[:,i] == 'MAX'] = 0
-        
-        out = out * (1-mask) + mask * self.bin_encs[i].inverse_transform(x_dec[:,i].astype(int).reshape(-1, 1)).flatten()
-        
-        
-        return out, mask
-    
-    
-    def uniform_sample(self, x_enc):
-        """
-        Sample uniformly in quantile groups.
-        """
-        
-        x_dec_aux = self.ord_enc.inverse_transform(x_enc)
-        x_num_gen = []
-        for i in range(x_enc.shape[1]):
-            x_dec_i, mask_i, left_q_i, right_q_i = self.decode_(x_dec_aux, i, return_quantiles=True)
-            
-            # sample uniformly in quantile groups and scale by bin boundaries
-            x_aux_gen = (right_q_i - left_q_i) * np.random.rand(x_enc.shape[0]) + left_q_i
-            x_num_gen.append(x_aux_gen * mask_i + x_dec_i * ~mask_i)
-        x_num_gen = np.column_stack(x_num_gen)
-        
-        return x_num_gen
-
-
-
 NUMERIC_DIGIT_MAX_DECIMAL = 18
 NUMERIC_DIGIT_MIN_DECIMAL = -8
 
-
+# Note: the following functions for the encoding of numeric data into digits are taken from the
+# mostly ai engine repository: https://github.com/mostly-ai/mostlyai-engine/blob/main/mostlyai/engine/_encoding_types/tabular/numeric.py 
 
 def _type_safe_numeric_series(numeric_array: np.ndarray | list, pd_dtype: str) -> pd.Series:
     # make a safe conversion using numpy's astype as an intermediary
@@ -778,7 +495,8 @@ def determine_digit_encoding(train_set, digit_prec_treshold=3):
 
 class DigitEncoder:
     """
-    Digit encoding.
+    Digit encoding of numeric features.
+    Based partially on functions from https://github.com/mostly-ai/mostlyai-engine/blob/main/mostlyai/engine/_encoding_types/tabular/numeric.py.
     """
     
     def __init__(self, train_set):
@@ -836,11 +554,7 @@ class DigitEncoder:
             
             self.feat_stats[i] = stats
             
-            
-            
-            
-            
-        
+             
     def determine_min_max(self, x: pl.DataFrame, min_max_threshold=20):
         
         idx_to_min_max = {}
@@ -892,10 +606,6 @@ class DigitEncoder:
         self.feat_stats[i]['n_cats'] = df_split.shape[1] # how many subcolumns per feature
         return df_split
     
-
-
-
-
 
 
 class CatEncoder:
@@ -950,7 +660,6 @@ class CatEncoder:
                 
             vals = np.unique(d)
             new_vals = [v for v in vals if v not in self.idx_to_stats[i]['values']]
-            # print(f"Col {i} New values not in categories: {new_vals}")
             
             if len(new_vals) > 0:
                 d = d.replace(new_vals, 'UNKNOWN')
@@ -1095,7 +804,7 @@ class FastTensorDataLoaderWithConditioning:
     """
     A DataLoader-like object for a set of tensors that can be much faster than
     TensorDataset + DataLoader because dataloader grabs individual indices of
-    the dataset and calls cat (slow).
+    the dataset and calls cat (slow). This loader adds the additional conditioning add_cond.
     Adapted from: https://discuss.pytorch.org/t/dataloader-much-slower-than-manual-batching/27014/6
     """
     def __init__(self, X_bin, X_cat, X_num_enc, X_num, mask, add_cond, batch_size=32, shuffle=False, drop_last=False):
@@ -1187,6 +896,9 @@ def count_to_get_probs(data, feat_names):
 
 
 class DataEditor():
+    """
+    A class to edit the data loaders depending on the data we condition the model on.
+    """
     def __init__(self, select_labels):
         self.select_labels = select_labels
     
@@ -1212,14 +924,10 @@ class DataEditor():
         add_cond_val = df_val.select(self.select_labels).to_torch().long()
         
         # remove features we condition on from training data
-        # new_train_df = df_trn.select(pl.exclude(self.select_labels))
-        
         keep_idx = [i for i, col in enumerate(dp.cat_cols) if col not in self.select_labels]
         self.cat_n_classes = [cat_n_classes[i] for i in keep_idx]
         self.new_X_cat_cols = [col for col in dp.cat_cols if col not in self.select_labels]
         new_X_cat_train = df_trn.select(pl.col(self.new_X_cat_cols)).to_torch().long()
-        
-        # new_val_df = df_val.select(pl.exclude(self.select_labels))
         new_X_cat_val = df_val.select(pl.col(self.new_X_cat_cols)).to_torch().long()
         
         keep_idx = [i for i, col in enumerate(num_enc_names) if col not in self.select_labels]

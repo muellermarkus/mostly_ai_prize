@@ -224,9 +224,6 @@ class ARGN(nn.Module):
         return torch.row_stack(x_list)
     
     
-    
-    
-
 def save_model(model, to_disk=False):
     if not to_disk:
         state_dict = model.state_dict()
