@@ -216,15 +216,13 @@ class DataPreprocessor:
                 # decode digit data
                 X_digit_gen = self.digit_enc.decode(X_digit_enc_gen)
                 
-
-            if self.cont_encoder == 1:
-                if sample_uniformly:
-                    X_num_gen = self.num_bin_enc.uniform_sample(X_num_enc_gen)
-                else:
-                    X_num_dec_gen, masks = self.num_bin_enc.decode(X_num_enc_gen)
-                    # overwrite numerical values by num_enc values where necessary
-                    # once nan is involved (missing data), X_num_gen is supposed to be nan anyways
-                    X_num_gen = masks * X_num_gen + (~masks) * X_num_dec_gen
+            if sample_uniformly:
+                X_num_gen = self.num_bin_enc.uniform_sample(X_num_enc_gen)
+            else:
+                X_num_dec_gen, masks = self.num_bin_enc.decode(X_num_enc_gen)
+                # overwrite numerical values by num_enc values where necessary
+                # once nan is involved (missing data), X_num_gen is supposed to be nan anyways
+                X_num_gen = masks * X_num_gen + (~masks) * X_num_dec_gen
                     
             if len(self.digit_cols) > 0:
                 # combine digit data with numerical data
