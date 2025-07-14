@@ -20,6 +20,12 @@ Training and validation losses can be accessed using tensorboard and are saved i
 
 The model can be trained on a different dataset by adjusting the `file_path` in `main.py` accordingly.
 
+## Final Result
+
+In the final evaluation round, the MOSTLY AI team ran all submissions six times. This solution came in 2nd place (in terms of average performance) or alternatively 3rd place (in terms of maximum performance over the six runs).
+
+![Alt text](https://github.com/mostly-ai/the-prize-eval/blob/main/stage2-flat.png)
+
 
 ## Relevant papers
 
