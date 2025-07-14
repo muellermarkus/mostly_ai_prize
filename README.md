@@ -22,7 +22,7 @@ The model can be trained on a different dataset by adjusting the `file_path` in 
 
 ## Final Result
 
-In the final evaluation round, the MOSTLY AI team ran all submissions six times. This solution came in 2nd place (in terms of average performance) or alternatively 3rd place (in terms of maximum performance over the six runs).
+In the final evaluation round, the MOSTLY AI team ran all submissions six times. This solution came in 2nd place (in terms of average performance) or alternatively 3rd place (in terms of maximum performance over the six runs). For full results, see https://github.com/mostly-ai/the-prize-eval.
 
 ![Alt text](https://github.com/mostly-ai/the-prize-eval/blob/main/stage2-flat.png)
 
